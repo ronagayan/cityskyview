@@ -97,13 +97,24 @@ class ModelScene:
         s = self.settings
         mat = dict(ambient=0.30, diffuse=0.78, specular=0.06, specular_power=12)
 
-        terrain = _polydata(model.terrain.vertices, model.terrain.faces)
-        terrain = terrain.compute_normals(cell_normals=False, point_normals=True,
-                                          split_vertices=True, feature_angle=55.0,
-                                          auto_orient_normals=False)
+        # Terrain: the relief is smooth-shaded, the cut walls and the underside
+        # are flat-shaded. (Interpolated normals on the long thin wall triangles
+        # a boolean cut leaves behind show up as light streaks.)
+        nz = model.terrain.face_normals[:, 2]
+        top = nz > 0.08
+        faces = np.asarray(model.terrain.faces)
+        relief = _polydata(model.terrain.vertices, faces[top]).clean()
+        relief = relief.compute_normals(cell_normals=False, point_normals=True,
+                                        split_vertices=True, feature_angle=60.0,
+                                        auto_orient_normals=False)
         self._actors["terrain"] = self.pl.add_mesh(
-            terrain, color=s.color("terrain"), smooth_shading=True, render=False,
+            relief, color=s.color("terrain"), smooth_shading=True, render=False,
             name="terrain", **mat)
+        if (~top).any():
+            sides = _polydata(model.terrain.vertices, faces[~top]).clean()
+            self._actors["terrain_sides"] = self.pl.add_mesh(
+                sides, color=_shade(s.color("terrain"), 0.82), smooth_shading=False,
+                render=False, name="terrain_sides", pickable=False, **mat)
 
         for key, mesh in model.layers.items():
             pd = _polydata(mesh.vertices, mesh.faces).compute_normals(
@@ -178,6 +189,8 @@ class ModelScene:
             actor = self._actors.get(key)
             if actor is not None:
                 actor.prop.color = s.color(key)
+        if self._actors.get("terrain_sides") is not None:
+            self._actors["terrain_sides"].prop.color = _shade(s.color("terrain"), 0.82)
         self.set_selection(selected_ids)
 
     # ---------------------------------------------------------------- camera

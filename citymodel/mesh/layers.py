@@ -90,6 +90,10 @@ def layer_shapes_mm(features: dict, frame: Frame, settings: ModelSettings,
         g = unary_union(polys)
         for blocker in blockers:                        # the re-grow may touch again
             g = g.difference(blocker)
+        # pull the outline in by 4 um: shapes that touch at a single point (a
+        # pinch) come apart, so each draped shell is a clean manifold of its own
+        g = g.buffer(-0.004, join_style="mitre")
+        g = unary_union([p for p in polygons_of(g) if p.area >= s.min_feature_mm ** 2 * 0.5])
         if g.is_empty:
             continue
         out[layer] = g

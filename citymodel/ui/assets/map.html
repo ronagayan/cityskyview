@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@geoman-io/leaflet-geoman-free@2.17.0/dist/leaflet-geoman.css">
+<style>
+  html, body, #map { height: 100%; margin: 0; background: #14171c; }
+  body { font: 13px "Segoe UI", system-ui, sans-serif; color: #d7dce4; }
+  .leaflet-container { background: #14171c; }
+  .dark-tiles { filter: invert(1) hue-rotate(180deg) brightness(0.92) contrast(0.88) saturate(0.55); }
+  .leaflet-bar a, .leaflet-control-layers, .leaflet-pm-toolbar .leaflet-buttons-control-button {
+    background-color: #232831 !important; border-color: #3a414d !important; color: #d7dce4 !important; }
+  .leaflet-bar a:hover { background-color: #2f3642 !important; }
+  .leaflet-pm-toolbar .control-icon { filter: invert(0.85); }
+  .leaflet-control-layers-expanded { color: #d7dce4; padding: 8px 10px; }
+  .leaflet-control-attribution { background: rgba(20,23,28,.75) !important; color: #8a93a1 !important; }
+  .leaflet-control-attribution a { color: #9fb4d0 !important; }
+  .leaflet-tooltip { background: #232831; border: 1px solid #3a414d; color: #e6e9ee; box-shadow: none; }
+  .leaflet-tooltip-top:before { border-top-color: #3a414d; }
+  #hint { position: absolute; z-index: 800; left: 50%; bottom: 18px; transform: translateX(-50%);
+          background: rgba(30,35,43,.92); border: 1px solid #3a414d; border-radius: 8px;
+          padding: 7px 14px; pointer-events: none; max-width: 80%; text-align: center; }
+  #hint b { color: #ffb454; }
+  #offline { position:absolute; inset:0; display:none; align-items:center; justify-content:center;
+             text-align:center; padding:30px; color:#aab3c0; z-index:900; background:#14171c; }
+</style></head>
+<body>
+<div id="map"></div>
+<div id="hint"></div>
+<div id="offline"><div><h3>The map could not load</h3>
+ <p>The map library comes from the internet (cdn.jsdelivr.net). Check your connection and press
+ <b>Reload map</b>.</p></div></div>
+<script>/*QWEBCHANNEL_JS*/</script>
+<script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@geoman-io/leaflet-geoman-free@2.17.0/dist/leaflet-geoman.min.js"></script>
+<script>
+"use strict";
+const AREA_STYLE = {color: '#ffb454', weight: 2.5, fillColor: '#ffb454', fillOpacity: 0.07, dashArray: null};
+const FP = {color: '#8fa3bd', weight: 1, fillColor: '#8fa3bd', fillOpacity: 0.28};
+const FP_SEL = {color: '#ff6a55', weight: 2, fillColor: '#ff5a44', fillOpacity: 0.75};
+const FP_HOVER = {weight: 2.5, fillOpacity: 0.55};
+
+let bridge = null, map = null, areaLayer = null, footprints = null;
+let selected = new Set(), byId = new Map(), quiet = false;
+
+function hint(html) { document.getElementById('hint').innerHTML = html; }
+function defaultHint() {
+  hint(areaLayer ? 'Drag the corners to adjust the area. <b>Click a building</b> to select it.'
+                 : 'Pick a drawing tool on the left (<b>rectangle</b>, polygon or circle) and mark the area to model.');
+}
+
+function boot() {
+  if (typeof L === 'undefined') { document.getElementById('offline').style.display = 'flex'; return; }
+  map = L.map('map', {zoomControl: true, zoomSnap: 0.25, wheelPxPerZoomLevel: 90, preferCanvas: false})
+         .setView([40.757, -73.985], 15);
+  const OSM = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
+  const OSM_ATTR = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
+  const base = {
+    // the standard OSM tiles, darkened with a CSS filter -- no extra provider, no API key
+    'Dark': L.tileLayer(OSM, {maxZoom: 19, attribution: OSM_ATTR, className: 'dark-tiles'}),
+    'Streets': L.tileLayer(OSM, {maxZoom: 19, attribution: OSM_ATTR}),
+    'Satellite': L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+        {maxZoom: 19, attribution: 'Imagery &copy; Esri, Maxar, Earthstar Geographics'}),
+    'Terrain': L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
+        {maxZoom: 17, attribution: OSM_ATTR + ', SRTM | &copy; OpenTopoMap (CC-BY-SA)'}),
+  };
+  base['Dark'].addTo(map);
+  L.control.layers(base, null, {position: 'topright'}).addTo(map);
+  L.control.scale({imperial: false}).addTo(map);
+  map.on('baselayerchange', e => bridge && bridge.onViewChanged(JSON.stringify(viewState(e.name))));
+  map._baseName = 'Dark';
+  map.on('baselayerchange', e => { map._baseName = e.name; });
+  map._bases = base;
+
+  map.pm.addControls({position: 'topleft', drawMarker: false, drawCircleMarker: false, drawPolyline: false,
+    drawText: false, drawRectangle: true, drawPolygon: true, drawCircle: true, editMode: true,
+    dragMode: true, cutPolygon: false, removalMode: true, rotateMode: false});
+  map.pm.setPathOptions(AREA_STYLE);
+  map.pm.setGlobalOptions({snappable: false, allowSelfIntersection: false});
+
+  map.on('pm:drawstart', () => hint('Click to place points. For a rectangle or circle: click, move, click again.'));
+  map.on('pm:drawend', defaultHint);
+  map.on('pm:create', e => { adoptArea(e.layer, e.shape); sendArea(); });
+  map.on('pm:remove', e => { if (e.layer === areaLayer) { areaLayer = null; sendArea(); defaultHint(); } });
+  map.on('moveend', () => bridge && bridge.onViewChanged(JSON.stringify(viewState())));
+  defaultHint();
+  if (bridge) bridge.onReady();
+}
+
+function viewState(baseName) {
+  const c = map.getCenter();
+  return {lat: c.lat, lon: c.lng, zoom: map.getZoom(), basemap: baseName || map._baseName};
+}
+
+function adoptArea(layer, shape) {
+  if (areaLayer && areaLayer !== layer) map.removeLayer(areaLayer);
+  areaLayer = layer;
+  areaLayer._shape = shape || (layer instanceof L.Circle ? 'Circle' : layer instanceof L.Rectangle ? 'Rectangle' : 'Polygon');
+  layer.setStyle(AREA_STYLE);
+  layer.bringToBack();
+  layer.on('pm:edit pm:dragend pm:markerdragend', sendArea);
+  layer.on('pm:drag pm:markerdrag', () => { quiet = true; });
+  layer.pm.enable({snappable: false, allowSelfIntersection: false});
+  defaultHint();
+}
+
+function areaJson() {
+  if (!areaLayer) return null;
+  if (areaLayer instanceof L.Circle) {
+    const c = areaLayer.getLatLng();
+    return {shape: 'circle', center: [c.lat, c.lng], radius_m: areaLayer.getRadius()};
+  }
+  const b = areaLayer.getBounds();
+  const bbox = [b.getSouth(), b.getWest(), b.getNorth(), b.getEast()];
+  if (areaLayer._shape === 'Rectangle') return {shape: 'rectangle', bbox: bbox};
+  const ring = areaLayer.getLatLngs()[0].map(p => [p.lat, p.lng]);
+  return {shape: 'polygon', bbox: bbox, ring: ring};
+}
+function sendArea() { quiet = false; if (bridge) bridge.onAreaChanged(JSON.stringify(areaJson())); }
+
+// ---- called from Python ------------------------------------------------
+function setArea(a, fit) {
+  if (areaLayer) { map.removeLayer(areaLayer); areaLayer = null; }
+  if (!a) { defaultHint(); return; }
+  let layer;
+  if (a.shape === 'circle') layer = L.circle(a.center, {radius: a.radius_m});
+  else if (a.shape === 'polygon') layer = L.polygon(a.ring);
+  else layer = L.rectangle([[a.bbox[0], a.bbox[1]], [a.bbox[2], a.bbox[3]]]);
+  layer.addTo(map);
+  adoptArea(layer, a.shape === 'circle' ? 'Circle' : a.shape === 'polygon' ? 'Polygon' : 'Rectangle');
+  if (fit) map.fitBounds(layer.getBounds(), {padding: [40, 40], animate: false});
+}
+
+function areaAroundView(fraction) {       // "use what I am looking at"
+  const b = map.getBounds(), c = b.getCenter();
+  const dLat = (b.getNorth() - b.getSouth()) * fraction / 2, dLon = (b.getEast() - b.getWest()) * fraction / 2;
+  setArea({shape: 'rectangle', bbox: [c.lat - dLat, c.lng - dLon, c.lat + dLat, c.lng + dLon]}, false);
+  sendArea();
+}
+
+function setFootprints(gj) {
+  if (footprints) { map.removeLayer(footprints); footprints = null; }
+  byId.clear();
+  if (!gj || !gj.features || !gj.features.length) return;
+  footprints = L.geoJSON(gj, {
+    pmIgnore: true, snapIgnore: true, bubblingMouseEvents: false,
+    style: f => selected.has(f.properties.id) ? FP_SEL : FP,
+    onEachFeature: (f, layer) => {
+      byId.set(f.properties.id, layer);
+      const p = f.properties;
+      layer.bindTooltip((p.name ? '<b>' + p.name + '</b><br>' : '') + p.info, {sticky: true, direction: 'top', opacity: 0.95});
+      layer.on('click', ev => {
+        if (map.pm.globalDrawModeEnabled() || map.pm.globalRemovalModeEnabled() || quiet) return;
+        L.DomEvent.stop(ev);
+        if (bridge) bridge.onBuildingClicked(p.id);
+      });
+      layer.on('mouseover', () => layer.setStyle(FP_HOVER));
+      layer.on('mouseout', () => layer.setStyle(selected.has(p.id) ? FP_SEL : FP));
+    }}).addTo(map);
+  if (areaLayer) areaLayer.bringToBack();
+}
+
+function setSelection(ids) {
+  const next = new Set(ids);
+  for (const id of new Set([...selected, ...next])) {
+    const layer = byId.get(id);
+    if (layer) { layer.setStyle(next.has(id) ? FP_SEL : FP); if (next.has(id)) layer.bringToFront(); }
+  }
+  selected = next;
+}
+
+function flyTo(lat, lon, zoom, bbox) {
+  if (bbox) map.fitBounds([[bbox[0], bbox[1]], [bbox[2], bbox[3]]], {maxZoom: 17, animate: false});
+  else map.setView([lat, lon], zoom || 16, {animate: false});
+}
+function restoreView(v) {
+  if (v && v.basemap && map._bases[v.basemap] && v.basemap !== map._baseName) {
+    map.removeLayer(map._bases[map._baseName]); map._bases[v.basemap].addTo(map); map._baseName = v.basemap;
+  }
+  if (v && isFinite(v.lat)) map.setView([v.lat, v.lon], v.zoom || 15, {animate: false});
+}
+function focusBuilding(id) {
+  const layer = byId.get(id);
+  if (layer) map.fitBounds(layer.getBounds(), {maxZoom: 18, padding: [80, 80]});
+}
+
+if (typeof QWebChannel !== 'undefined' && typeof qt !== 'undefined') {
+  new QWebChannel(qt.webChannelTransport, ch => { bridge = ch.objects.bridge; boot(); });
+} else { boot(); }
+</script></body></html>

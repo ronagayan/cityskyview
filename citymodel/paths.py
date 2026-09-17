@@ -23,7 +23,9 @@ def cache_dir() -> Path:
 
 
 def config_dir() -> Path:
-    p = _base("APPDATA", Path.home() / ".config") / APP_NAME
+    """Settings + log. Override with CITYMODEL_CONFIG."""
+    override = os.environ.get("CITYMODEL_CONFIG")
+    p = Path(override) if override else _base("APPDATA", Path.home() / ".config") / APP_NAME
     p.mkdir(parents=True, exist_ok=True)
     return p
 

@@ -1,0 +1,148 @@
+"""The interactive 3D preview (PyVista / VTK inside Qt)."""
+
+from __future__ import annotations
+
+import vtk
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtWidgets import QHBoxLayout, QLabel, QToolButton, QVBoxLayout, QWidget
+from pyvistaqt import QtInteractor
+
+from ..log import logger
+from ..model import Model
+from ..render.scene import ModelScene
+from ..settings import ModelSettings
+
+CLICK_SLOP_PX = 4
+
+
+class PreviewWidget(QWidget):
+    buildingClicked = Signal(str)
+
+    def __init__(self, settings: ModelSettings, parent=None):
+        super().__init__(parent)
+        self.settings = settings
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+
+        bar = QHBoxLayout()
+        bar.setContentsMargins(8, 6, 8, 6)
+        self.title = QLabel("3D preview")
+        self.title.setObjectName("panelTitle")
+        bar.addWidget(self.title)
+        bar.addSpacing(14)
+        bar.addStretch(1)
+        self.info = QLabel("")
+        self.info.setObjectName("muted")
+        bar.addWidget(self.info)
+        for text, tip, fn in (("Fit", "Reset the camera", self.reset_camera),
+                              ("Top", "Look straight down", self.top_view),
+                              ("PNG", "Save a screenshot", self.save_screenshot)):
+            b = QToolButton()
+            b.setText(text)
+            b.setToolTip(tip)
+            b.clicked.connect(fn)
+            bar.addWidget(b)
+        outer.addLayout(bar)
+
+        # The VTK widget is always the visible one. (Hiding it behind a stacked
+        # placeholder means its native window does not exist yet when the first
+        # model arrives, and VTK then fails to create its OpenGL context.)
+        self.plotter = QtInteractor(self, auto_update=False)
+        outer.addWidget(self.plotter, 1)
+        self._placeholder = None
+
+        self.scene = ModelScene(self.plotter, settings)
+        self._press = None
+        self._picker = vtk.vtkCellPicker()
+        self._picker.SetTolerance(0.0008)
+        iren = self.plotter.iren.interactor
+        iren.AddObserver("LeftButtonPressEvent", self._on_press, 1.0)
+        iren.AddObserver("LeftButtonReleaseEvent", self._on_release, 1.0)
+        self.plotter.enable_trackball_style()
+        self._show_placeholder()
+
+    PLACEHOLDER = "\n".join((
+        "No model yet", "",
+        "Mark an area on the map, then press  Generate model.", "",
+        "Left-drag: orbit      Wheel / right-drag: zoom      Shift+drag: pan",
+        "Click a building to select it."))
+
+    def _show_placeholder(self):
+        if self._placeholder is None:
+            self._placeholder = self.plotter.add_text(
+                self.PLACEHOLDER, position="upper_left", font_size=10, color="#8a93a1",
+                name="placeholder")
+
+    def _hide_placeholder(self):
+        if self._placeholder is not None:
+            self.plotter.remove_actor("placeholder", render=False)
+            self._placeholder = None
+
+    # ------------------------------------------------------------------ model
+    def show_model(self, model: Model, selected_ids=(), keep_camera: bool = False):
+        self._hide_placeholder()
+        self.scene.show(model, selected_ids, reset_camera=not keep_camera)
+        w, h, z = model.size_mm
+        n = len(model.terrain.faces) + sum(len(b.mesh.faces) for b in model.buildings)
+        self.info.setText(f"{w:.0f} x {h:.0f} x {z:.0f} mm   ·   {model.info.get('scale', '')}"
+                          f"   ·   {n:,} triangles   ")
+
+    def clear(self):
+        self.scene.clear()
+        self.info.setText("")
+        self._show_placeholder()
+        self.plotter.render()
+
+    def set_selection(self, ids):
+        self.scene.set_selection(ids)
+
+    def apply_look(self, selected_ids=()):
+        """Colours / SSAO / edges changed -- rebuild the actors, keep the camera."""
+        if self.scene.model is not None:
+            self.scene.show(self.scene.model, selected_ids, reset_camera=False)
+
+    def reset_camera(self):
+        self.scene.reset_camera()
+
+    def top_view(self):
+        self.scene.top_view()
+
+    def save_screenshot(self):
+        from PySide6.QtWidgets import QFileDialog  # noqa: PLC0415
+        if self.scene.model is None:
+            return
+        path, _ = QFileDialog.getSaveFileName(self, "Save preview image", "preview.png",
+                                              "PNG image (*.png)")
+        if path:
+            self.plotter.screenshot(path)
+            logger.info("preview saved: %s", path)
+
+    # ---------------------------------------------------------------- picking
+    def _on_press(self, obj, _event):
+        self._press = obj.GetEventPosition()
+
+    def _on_release(self, obj, _event):
+        if self._press is None or self.scene.model is None:
+            return
+        x, y = obj.GetEventPosition()
+        px, py = self._press
+        self._press = None
+        if abs(x - px) > CLICK_SLOP_PX or abs(y - py) > CLICK_SLOP_PX:
+            return                                   # that was a drag (orbit)
+        actor = self.scene._actors.get("buildings")
+        if actor is None:
+            return
+        self._picker.InitializePickList()
+        self._picker.AddPickList(actor)
+        self._picker.PickFromListOn()
+        if self._picker.Pick(x, y, 0, self.plotter.renderer) and self._picker.GetCellId() >= 0:
+            bid = self.scene.building_at_cell(self._picker.GetCellId())
+            if bid:
+                self.buildingClicked.emit(bid)
+
+    def shutdown(self):
+        try:
+            self.plotter.close()
+        except Exception:  # noqa: BLE001
+            pass

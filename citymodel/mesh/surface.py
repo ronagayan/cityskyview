@@ -83,7 +83,9 @@ def make_surface(frame: Frame, dem, source_kind: str, native_res_m: float,
             if m.sum() >= 4:
                 elev[m] = np.percentile(elev[m], 15)
 
-    sigma = s.terrain_smoothing * min(max(0.6, 0.5 * native_res_m / max(cell_m, 1e-6)), 8.0)
+    # enough to hide sensor noise / integer-metre terracing at the source's own
+    # resolution, not enough to round off ridges
+    sigma = s.terrain_smoothing * min(max(0.5, 0.35 * native_res_m / max(cell_m, 1e-6)), 6.0)
     elev = demlib.smooth(elev, sigma)
 
     inside = rasterize([frame.outline_mm.buffer(max(cx, cy))], x0, y0, cx, cy, nx, ny)

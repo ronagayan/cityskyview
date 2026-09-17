@@ -27,14 +27,16 @@ class MeshReport:
     positive_volume: bool = False
     degenerate_faces: int = 0
     open_edges: int = 0
-    nonmanifold_edges: int = 0
+    nonmanifold_edges: int = 0     # edges with an odd / wrong face count: real defects
+    touching_edges: int = 0        # edges with exactly 4 faces: two closed shells touching
     bodies: int = 0
     repaired: list = field(default_factory=list)
 
     @property
     def ok(self) -> bool:
-        return (self.watertight and self.winding_consistent and self.positive_volume
-                and self.degenerate_faces == 0 and self.nonmanifold_edges == 0)
+        return (self.open_edges == 0 and self.nonmanifold_edges == 0
+                and self.winding_consistent and self.positive_volume
+                and self.degenerate_faces == 0)
 
     def problems(self) -> list:
         p = []
@@ -52,19 +54,93 @@ class MeshReport:
 
     def line(self) -> str:
         state = "OK" if self.ok else "PROBLEMS: " + "; ".join(self.problems())
+        if self.touching_edges:
+            state += (f" ({self.touching_edges} edge{'s' if self.touching_edges != 1 else ''} "
+                      "where two closed bodies touch -- slicers treat these as separate shells)")
         fixed = f"  [repaired: {', '.join(self.repaired)}]" if self.repaired else ""
         return (f"{self.name}: {self.faces:,} triangles, {self.bodies} "
                 f"bod{'y' if self.bodies == 1 else 'ies'} -- {state}{fixed}")
 
 
-def inspect(mesh: trimesh.Trimesh, name: str = "") -> MeshReport:
+def as_read(mesh: trimesh.Trimesh, digits: int = 4) -> trimesh.Trimesh:
+    """The mesh the way a slicer will see it: coordinates at file precision
+    and vertices welded by position. Two shells that only touch are separate
+    here but share edges there -- so this is the version worth judging."""
+    v = np.round(np.asarray(mesh.vertices, dtype=np.float64), digits)
+    out = trimesh.Trimesh(vertices=v, faces=np.asarray(mesh.faces).copy(), process=False)
+    out.merge_vertices(digits_vertex=digits)
+    return out
+
+
+def _flip_out_degenerates(faces: np.ndarray, verts: np.ndarray, max_passes: int = 6):
+    """Remove zero-area triangles whose three vertices are distinct but
+    collinear. Boolean engines emit these to stitch a T-junction: vertex m
+    sits on edge a-b of the neighbouring triangle (b, a, d). Deleting the
+    sliver would open a hole; instead split the neighbour at m:
+    (b, a, d) -> (b, m, d) + (m, a, d), which needs the sliver no longer."""
+    faces = faces.copy()
+    for _ in range(max_passes):
+        tri = verts[faces]
+        area = 0.5 * np.linalg.norm(np.cross(tri[:, 1] - tri[:, 0], tri[:, 2] - tri[:, 0]), axis=1)
+        bad = np.nonzero(area < 1e-10)[0]
+        if len(bad) == 0:
+            break
+        edge_face = {}
+        for fi, (a, b, c) in enumerate(faces):
+            edge_face[(a, b)] = fi
+            edge_face[(b, c)] = fi
+            edge_face[(c, a)] = fi
+        dead, added, touched = set(), [], set()
+        for fi in bad:
+            if fi in touched:
+                continue
+            f = faces[fi]
+            lens = [np.linalg.norm(verts[f[(k + 1) % 3]] - verts[f[k]]) for k in range(3)]
+            k = int(np.argmax(lens))
+            a, b, m = f[k], f[(k + 1) % 3], f[(k + 2) % 3]      # long edge a -> b, m between
+            nb = edge_face.get((b, a))
+            if nb is None or nb == fi or nb in touched:
+                continue
+            g = faces[nb]
+            d = [v for v in g if v != a and v != b]
+            if len(d) != 1 or d[0] == m:
+                continue
+            dead.update((fi, nb))
+            touched.update((fi, nb))
+            added += [(b, m, d[0]), (m, a, d[0])]
+        if not dead:
+            break
+        keep = np.ones(len(faces), dtype=bool)
+        keep[list(dead)] = False
+        faces = np.vstack([faces[keep], np.asarray(added, dtype=faces.dtype)])
+    return faces
+
+
+def clean_for_file(mesh: trimesh.Trimesh, digits: int = 4) -> trimesh.Trimesh:
+    """The mesh exactly as it will be written: coordinates at file precision,
+    vertices welded by position, collapsed and collinear triangles removed
+    without opening holes. What passes validation is then what gets exported."""
+    m = as_read(mesh, digits)
+    f = np.asarray(m.faces)
+    f = f[(f[:, 0] != f[:, 1]) & (f[:, 1] != f[:, 2]) & (f[:, 0] != f[:, 2])]   # collapsed edges
+    f = _flip_out_degenerates(f, np.asarray(m.vertices))
+    out = trimesh.Trimesh(vertices=np.asarray(m.vertices), faces=f, process=False)
+    out.update_faces(out.unique_faces())
+    out.remove_unreferenced_vertices()
+    return out
+
+
+def inspect(mesh: trimesh.Trimesh, name: str = "", file_view: bool = False) -> MeshReport:
+    if file_view:
+        mesh = as_read(mesh)
     rep = MeshReport(name, len(mesh.vertices), len(mesh.faces))
     if len(mesh.faces) == 0:
         return rep
     edges = np.sort(mesh.edges, axis=1)
     _u, counts = np.unique(edges, axis=0, return_counts=True)
     rep.open_edges = int((counts == 1).sum())
-    rep.nonmanifold_edges = int((counts > 2).sum())
+    rep.touching_edges = int((counts == 4).sum())
+    rep.nonmanifold_edges = int(((counts > 2) & (counts != 4)).sum())
     rep.degenerate_faces = int((mesh.area_faces < 1e-12).sum())
     rep.watertight = bool(mesh.is_watertight)
     rep.winding_consistent = bool(mesh.is_winding_consistent)
@@ -97,7 +173,7 @@ def from_manifold(man) -> trimesh.Trimesh:
                            process=False)
 
 
-SLIVER_TOL_MM = 0.002      # 2 microns: far below anything a printer resolves
+SLIVER_TOL_MM = 0.005      # 5 microns: far below anything a printer resolves
 
 
 def _desliver(man):
@@ -178,12 +254,18 @@ def basic_repair(mesh: trimesh.Trimesh) -> trimesh.Trimesh:
 
 def validate_and_repair(mesh: trimesh.Trimesh, name: str):
     """``(mesh, MeshReport)`` -- the mesh is repaired in place where needed."""
-    rep = inspect(mesh, name)
+    try:
+        cleaned = clean_for_file(mesh)
+        if len(cleaned.faces) >= 4:
+            mesh = cleaned
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("clean_for_file(%s) failed: %s", name, exc)
+    rep = inspect(mesh, name, file_view=True)
     if rep.ok:
         return mesh, rep
     before = rep.problems()
     mesh = basic_repair(mesh)
-    rep2 = inspect(mesh, name)
+    rep2 = inspect(mesh, name, file_view=True)
     rep2.repaired.append("weld / drop degenerate + duplicate faces / fix normals / fill holes")
     if not rep2.ok and HAVE_MANIFOLD:
         # last resort: let manifold3d rebuild each shell as a proper volume
@@ -191,7 +273,8 @@ def validate_and_repair(mesh: trimesh.Trimesh, name: str):
             shells = mesh.split(only_watertight=False)
             rebuilt = union(list(shells), name)
             if rebuilt is not None and len(rebuilt.faces):
-                rep3 = inspect(rebuilt, name)
+                rebuilt = clean_for_file(rebuilt)
+                rep3 = inspect(rebuilt, name, file_view=True)
                 if rep3.ok or len(rep3.problems()) < len(rep2.problems()):
                     rep3.repaired = rep2.repaired + ["rebuilt as a volume with manifold3d"]
                     mesh, rep2 = rebuilt, rep3

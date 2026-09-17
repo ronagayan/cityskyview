@@ -30,6 +30,9 @@ from .primitives import clean_polygon, heightfield_solid, polygons_of, prism
 from .terrain import TerrainSurface
 
 
+TOUCH_GROW_MM = 0.004
+
+
 @dataclass
 class BuildingSolid:
     bid: str                     # id used for selection (the parent building)
@@ -181,7 +184,13 @@ def build_buildings(features: dict, frame: Frame, surface: TerrainSurface,
     for r in recs:
         # a 1 micron grid: neighbours whose shared corners differ by float
         # noise end up with identical coordinates, so walls meet exactly
-        poly = shapely.set_precision(affinity.affine_transform(r.poly_m, to_mm), 0.001)
+        # ... and grown by 4 um first, so buildings that merely *touch* (a shared
+        # wall, a shared corner) overlap a hair and fuse into one body in the
+        # union. Solids that touch exactly are valid on their own but read as
+        # non-manifold edges once a slicer welds vertices by position.
+        poly = shapely.set_precision(
+            affinity.affine_transform(r.poly_m, to_mm).buffer(TOUCH_GROW_MM, join_style="mitre"),
+            0.001)
         if s.min_feature_mm > 0:
             poly = poly.simplify(s.min_feature_mm / 6.0, preserve_topology=True)
             poly = clean_polygon(poly)
@@ -207,7 +216,9 @@ def build_buildings(features: dict, frame: Frame, surface: TerrainSurface,
         if r.min_h > 0 and r.min_h * z_per_m < h_mm - 0.05:
             z_bottom = g_lo + r.min_h * z_per_m           # a raised part (bridge, tier)
         else:
-            z_bottom = max(lo - s.embed_mm, 0.05)
+            # one floor level per building: its parts then share a bottom plane
+            # and fuse cleanly instead of meeting edge-to-wall underground
+            z_bottom = max(g_lo - s.embed_mm, 0.05)
             z_top = max(z_top, hi + s.min_building_height_mm)   # never buried uphill
         mesh = None
         shape = roofs.roof_shape(r.feat.tags) if s.roof_shapes else None

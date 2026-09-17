@@ -1,0 +1,26 @@
+# CityModel -- Python 3.10+ (developed on 3.12, Windows 11)
+#   python -m pip install -r requirements.txt
+
+# --- geometry / data pipeline ---
+numpy>=1.26
+scipy>=1.11            # bicubic DEM sampling, smoothing
+shapely>=2.0           # footprints, overlays
+trimesh>=4.0           # mesh container, STL export, validation
+mapbox-earcut>=1.0     # polygon triangulation
+manifold3d>=3.0        # robust boolean union / difference -> guaranteed-manifold parts
+networkx>=3.0          # used by trimesh for body counting
+pyproj>=3.6            # local metric (transverse Mercator) projection
+rasterio>=1.3          # reads the Copernicus / USGS GeoTIFFs
+pillow>=10.0           # terrain PNG tiles, mask rasterisation
+requests>=2.31
+
+# --- application ---
+PySide6>=6.6           # Qt 6 UI, includes QtWebEngine for the embedded map
+pyvista>=0.43          # VTK scene
+pyvistaqt>=0.11        # VTK inside Qt
+
+# --- optional ---
+# overturemaps>=0.10   # fills building heights OSM lacks (pulls in pyarrow; slow first fetch)
+
+# --- development ---
+pytest>=8.0
