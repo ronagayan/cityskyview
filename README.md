@@ -112,6 +112,39 @@ model = pipeline.build_model(area, s, pipeline.fetch_data(area, s))
 pipeline.export_model(model, selected_ids=["way/34633854"], settings=s, out_dir="out", name="midtown")
 ```
 
+## GPU troubleshooting (laptops with two GPUs)
+
+The map and the 3D view are both hardware-accelerated. On a laptop with an Intel
+integrated GPU alongside a discrete NVIDIA/AMD one, Windows sometimes hands one of
+these views to the Intel GPU, and its driver can crash the whole app outright (an
+access violation) or render a blank/corrupted panel, especially right after the
+window opens or is moved. This is a driver bug, not something the app can catch or
+recover from once it happens — moving/resizing sooner or later triggers it again
+until the underlying GPU is changed.
+
+**Fix: force the app onto your other GPU.**
+1. Windows Settings → System → Display → **Graphics**.
+2. **Add an app** → Desktop app → browse to your Python interpreter, e.g.
+   `C:\Python312\python.exe` (find yours with `where python`).
+3. Click it → **Options** → **High performance** (your NVIDIA/AMD GPU) → Save.
+4. Restart CityModel.
+
+To confirm which GPU actually ended up rendering, check
+`%APPDATA%\CityModel\citymodel.log` for a line like `3D view GPU: NVIDIA ... `.
+If it says Intel, the setting above didn't take effect yet (a full restart of the
+app, sometimes of Windows, is occasionally needed for a fresh Graphics setting to
+apply) — the "Reinit" button next to the 3D view can also work around a one-off
+blank panel without restarting, but it can't fix a crash.
+
+If problems continue even on the other GPU, two environment variables (set before
+launching, e.g. `set CITYMODEL_GPU=software` in the same window before running
+`run_citymodel.bat`) change how the map renders:
+`CITYMODEL_GPU=software` forces both views onto a software renderer (slow, but
+immune to GPU driver bugs — useful to confirm the GPU really is the cause);
+`CITYMODEL_GPU=angle-d3d11` pins the map to a specific Direct3D backend instead of
+Chromium's own auto-detection (occasionally helps, occasionally makes things
+worse — try `software` first).
+
 ## Known limitations
 
 * Building-level data is limited to 60 km² per model (Overpass would time out); larger areas

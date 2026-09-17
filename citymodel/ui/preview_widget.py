@@ -84,8 +84,31 @@ class PreviewWidget(QWidget):
         iren.AddObserver("LeftButtonReleaseEvent", self._on_release, 1.0)
         self.plotter.enable_trackball_style()
         self._show_placeholder()
+        self._log_gpu_info()
         if self._model is not None:
             self.scene.show(self._model, self._selected_ids, reset_camera=True)
+
+    def _log_gpu_info(self):
+        """Which GPU actually ended up rendering the 3D view, once, so a crash
+        report or a support conversation doesn't need a minidump to find out.
+        On a laptop with two GPUs an Intel one here is the usual suspect for
+        driver crashes -- see the README's GPU troubleshooting note."""
+        try:
+            caps = self.plotter.render_window.ReportCapabilities()
+            vendor = next((ln.split(":", 1)[1].strip() for ln in caps.splitlines()
+                          if ln.lower().startswith("opengl vendor")), "")
+            renderer = next((ln.split(":", 1)[1].strip() for ln in caps.splitlines()
+                             if ln.lower().startswith("opengl renderer")), "")
+            if vendor or renderer:
+                logger.info("3D view GPU: %s -- %s", vendor, renderer)
+                if "intel" in vendor.lower():
+                    logger.warning(
+                        "The 3D view is running on the Intel integrated GPU. On laptops with "
+                        "a second (NVIDIA/AMD) GPU this is a common source of crashes and "
+                        "blank/corrupted rendering -- see the README's 'GPU troubleshooting' "
+                        "section to force this app onto the other GPU.")
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("could not read GPU capabilities: %s", exc)
 
     def reinitialize(self):
         logger.info("preview: rebuilding the 3D view")
