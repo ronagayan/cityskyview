@@ -65,26 +65,35 @@ def layer_shapes_mm(features: dict, frame: Frame, settings: ModelSettings,
     if sea_mm is not None and not sea_mm.is_empty and wanted["water"]:
         raw["water"] = unary_union([raw["water"], sea_mm]) if "water" in raw else sea_mm
 
-    keepout = None
+    # Every layer keeps clear of the buildings and of the layers above it in
+    # priority. Each subtraction is done on its own: unioning the keep-outs
+    # first looks tidier but makes GEOS node thousands of almost-coincident
+    # edges (a road cut to a building, then grown by 20 um), which is ~50x slower.
+    blockers = []
     if building_footprints:
-        keepout = unary_union(building_footprints).buffer(0.02)
-    out, taken = {}, keepout
+        blockers.append(unary_union(building_footprints).buffer(0.02, quad_segs=1))
+    out = {}
     outline = frame.outline_mm.buffer(-0.01)            # stay inside the plate walls
     for layer in LAYER_ORDER:
         g = raw.get(layer)
         if g is None or g.is_empty:
             continue
         g = g.intersection(outline)
-        if taken is not None:
-            g = g.difference(taken)
+        for blocker in blockers:
+            g = g.difference(blocker)
         # drop specks and hairlines nobody could print
-        g = g.buffer(-s.min_feature_mm / 4.0).buffer(s.min_feature_mm / 4.0)
+        q = s.min_feature_mm / 4.0
+        g = g.buffer(-q, quad_segs=2).buffer(q, quad_segs=2)
         polys = [p for p in polygons_of(g) if p.area >= s.min_feature_mm ** 2]
         if not polys:
             continue
         g = unary_union(polys)
+        for blocker in blockers:                        # the re-grow may touch again
+            g = g.difference(blocker)
+        if g.is_empty:
+            continue
         out[layer] = g
-        taken = g if taken is None else unary_union([taken, g.buffer(0.02)])
+        blockers.append(g.buffer(0.02, quad_segs=1))
     return out
 
 
