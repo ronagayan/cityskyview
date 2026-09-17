@@ -189,9 +189,12 @@ def build_buildings(features: dict, frame: Frame, surface: TerrainSurface,
         # union. Solids that touch exactly are valid on their own but read as
         # non-manifold edges once a slicer welds vertices by position.
         poly = shapely.set_precision(
-            affinity.affine_transform(r.poly_m, to_mm).buffer(TOUCH_GROW_MM, join_style="mitre"),
-            0.001)
-        if s.min_feature_mm > 0:
+            affinity.affine_transform(r.poly_m, to_mm).buffer(TOUCH_GROW_MM, join_style="mitre")
+            .intersection(frame.outline_mm), 0.001)       # ... but never past the plate edge
+        if poly.geom_type != "Polygon":
+            parts = polygons_of(poly)
+            poly = max(parts, key=lambda g: g.area) if parts else None
+        if poly is not None and s.min_feature_mm > 0:
             poly = poly.simplify(s.min_feature_mm / 6.0, preserve_topology=True)
             poly = clean_polygon(poly)
             if poly is not None and poly.geom_type != "Polygon":

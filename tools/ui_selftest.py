@@ -82,7 +82,38 @@ def s6():
     print("STLs:", sorted(os.listdir(os.path.join(out, "selftest_stl"))))
     win.preview.top_view(); QTimer.singleShot(1500, s7)
 def s7():
-    shot("03_top_view"); print("SELFTEST OK"); win.close(); app.exit(0)
+    shot("03_top_view"); win.preview.reset_camera()
+    # --- click a building in the 3D view -------------------------------------
+    import vtk
+    b = next(b for b in win.model.buildings if b.bid not in win.selected and b.footprint.area > 9)
+    c = b.footprint.representative_point(); top = float(b.mesh.bounds[1][2])
+    coord = vtk.vtkCoordinate(); coord.SetCoordinateSystemToWorld(); coord.SetValue(c.x, c.y, top)
+    # look straight down so nothing can stand in front of the roof we aim at
+    win.preview.top_view()
+    x, y = coord.GetComputedDisplayValue(win.preview.plotter.renderer)
+    class FakeIren:
+        def GetEventPosition(self): return (x, y)
+    before = list(win.selected)
+    win.preview._on_press(FakeIren(), None); win.preview._on_release(FakeIren(), None)
+    picked = [i for i in win.selected if i not in before]
+    print("3D click picked:", picked, "(aimed at", b.bid + ")")
+    if picked != [b.bid]: return fail("clicking a building in the 3D view did not select it")
+    # --- search --------------------------------------------------------------
+    win._search("Eiffel Tower, Paris")
+    wait_for(lambda: win.sidebar.results.count() > 0 and "search" not in win._jobs, s8, "search")
+def s8():
+    r = win.sidebar.results.item(0).data(Qt.ItemDataRole.UserRole)
+    print("search ->", r["name"][:60].encode("ascii", "replace").decode(), round(r["lat"], 3), round(r["lon"], 3))
+    if abs(r["lat"] - 48.858) > 0.01: return fail("search result is not the Eiffel Tower")
+    print("coordinate search ->", __import__("citymodel.data.geocode", fromlist=["x"]).search("32.0853, 34.7818")[0]["name"])
+    shot("04_after_pick"); win.close()
+    # --- persistence -----------------------------------------------------------
+    from citymodel.settings import load_state
+    st = load_state()
+    ok = st.window.get("has_area") and len(st.selected_ids) == 3 and abs(st.area.bbox[0] - BBOX[0]) < 1e-6
+    print("persisted: area", st.area.bbox, "selected", len(st.selected_ids), "basemap", st.map_view.get("basemap"))
+    if not ok: print("SELFTEST FAILED: state not persisted"); return app.exit(1)
+    print("SELFTEST OK"); app.exit(0)
 
 win.map.ready.connect(lambda: QTimer.singleShot(1500, s1))
 QTimer.singleShot(240_000, lambda: fail("global timeout"))
