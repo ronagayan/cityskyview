@@ -82,7 +82,14 @@ def s6():
     print("STLs:", sorted(os.listdir(os.path.join(out, "selftest_stl"))))
     win.preview.top_view(); QTimer.singleShot(1500, s7)
 def s7():
-    shot("03_top_view"); win.preview.reset_camera()
+    shot("03_top_view")
+    win.preview.reinitialize()          # exercise the GPU-recovery path
+    print("reinit ok, model still attached:", win.preview.scene.model is win.model)
+    win.preview.set_selection(win.selected)
+    win.preview.reset_camera()
+    QTimer.singleShot(400, s7b)          # let the new widget settle its layout/size first
+
+def s7b():
     # --- click a building in the 3D view -------------------------------------
     import vtk
     b = next(b for b in win.model.buildings if b.bid not in win.selected and b.footprint.area > 9)
