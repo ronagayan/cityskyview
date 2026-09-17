@@ -179,7 +179,9 @@ def build_buildings(features: dict, frame: Frame, surface: TerrainSurface,
     ground_of_group: dict = {}
     prepared = []
     for r in recs:
-        poly = affinity.affine_transform(r.poly_m, to_mm)
+        # a 1 micron grid: neighbours whose shared corners differ by float
+        # noise end up with identical coordinates, so walls meet exactly
+        poly = shapely.set_precision(affinity.affine_transform(r.poly_m, to_mm), 0.001)
         if s.min_feature_mm > 0:
             poly = poly.simplify(s.min_feature_mm / 6.0, preserve_topology=True)
             poly = clean_polygon(poly)

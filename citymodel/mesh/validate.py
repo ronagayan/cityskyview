@@ -97,6 +97,22 @@ def from_manifold(man) -> trimesh.Trimesh:
                            process=False)
 
 
+SLIVER_TOL_MM = 0.002      # 2 microns: far below anything a printer resolves
+
+
+def _desliver(man):
+    """Two walls that are *almost* coincident (neighbouring buildings whose
+    shared nodes differ in the 5th decimal) leave micron-wide slivers in a
+    union. They are valid topology but collapse to zero-area triangles the
+    moment the mesh is written as 32-bit STL. manifold3d can remove them
+    while keeping the solid manifold."""
+    try:
+        out = man.simplify(SLIVER_TOL_MM)
+        return out if out.num_tri() else man
+    except Exception:  # noqa: BLE001
+        return man
+
+
 def union(meshes: list, label: str = "") -> trimesh.Trimesh | None:
     """Boolean union of closed solids -> one manifold mesh. Overlapping or
     touching buildings become a single clean shell instead of a pile of
@@ -124,7 +140,7 @@ def union(meshes: list, label: str = "") -> trimesh.Trimesh | None:
     if not good:
         return None
     result = good[0] if len(good) == 1 else m3.Manifold.batch_boolean(good, m3.OpType.Add)
-    return from_manifold(result)
+    return from_manifold(_desliver(result))
 
 
 def difference(a: trimesh.Trimesh, cutters: list) -> trimesh.Trimesh:
@@ -136,7 +152,7 @@ def difference(a: trimesh.Trimesh, cutters: list) -> trimesh.Trimesh:
         return a
     tool = cut[0] if len(cut) == 1 else m3.Manifold.batch_boolean(cut, m3.OpType.Add)
     res = to_manifold(a) - tool
-    return from_manifold(res) if res.num_tri() else a
+    return from_manifold(_desliver(res)) if res.num_tri() else a
 
 
 # ---------------------------------------------------------------------------

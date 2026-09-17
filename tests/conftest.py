@@ -59,8 +59,7 @@ class _Builder:
         return self._wid
 
 
-@pytest.fixture(scope="session")
-def osm_json():
+def build_osm_json():
     b = _Builder()
     ids = {}
     ids["tagged"] = b.ring(32.0880, 34.8100, 0.0003, 0.0004, {"building": "yes", "height": "18 m"})
@@ -89,6 +88,11 @@ def osm_json():
     b.ring(32.0902, 34.8140, 0.0006, 0.0008, {"natural": "water"})
     b.ring(32.0873, 34.8095, 0.0005, 0.0006, {"leisure": "park"})
     return {"elements": b.elements, "ids": {k: f"way/{v}" for k, v in ids.items()}}
+
+
+@pytest.fixture(scope="session")
+def osm_json():
+    return build_osm_json()
 
 
 @pytest.fixture(scope="session")

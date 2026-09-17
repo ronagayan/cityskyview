@@ -55,10 +55,44 @@ def triangulate(poly: Polygon):
         return v, f
     a, b, c = v[f[:, 0]], v[f[:, 1]], v[f[:, 2]]
     cross = (b[:, 0] - a[:, 0]) * (c[:, 1] - a[:, 1]) - (b[:, 1] - a[:, 1]) * (c[:, 0] - a[:, 0])
-    f = f[np.abs(cross) > 1e-12]                   # drop zero-area ears
-    cross = cross[np.abs(cross) > 1e-12]
+    # Thin ears are kept on purpose: dropping one leaves a T-junction, which
+    # is a hole once the sheet is turned into a solid. Callers avoid them by
+    # removing collinear outline points first (see _tidy).
     f[cross < 0] = f[cross < 0][:, ::-1]
     return v, f
+
+
+def _tidy_ring(xy: np.ndarray, tile: float, origin) -> np.ndarray:
+    """Remove ring points that are collinear with their neighbours -- GEOS
+    clipping leaves them behind and they turn into zero-area ears. A point
+    sitting on a tile grid line is never removed, however straight the outline
+    is there: the neighbouring tile has the same point, and dropping it on
+    one side only would open a crack between the two."""
+    pts = xy[:-1] if len(xy) > 1 and np.allclose(xy[0], xy[-1]) else xy
+    if len(pts) <= 3:
+        return xy
+    prev, nxt = np.roll(pts, 1, axis=0), np.roll(pts, -1, axis=0)
+    d1, d2 = pts - prev, nxt - pts
+    cross = np.abs(d1[:, 0] * d2[:, 1] - d1[:, 1] * d2[:, 0])
+    span = np.maximum(np.linalg.norm(d1, axis=1), np.linalg.norm(d2, axis=1))
+    straight = (cross <= 1e-7 * np.maximum(span, 1e-12)) & ((d1 * d2).sum(axis=1) > 0)
+    if tile > 0:
+        g = (pts - np.asarray(origin)) / tile
+        straight &= ~(np.abs(g - np.round(g)) < 1e-6).any(axis=1)
+    keep = pts[~straight]
+    if len(keep) < 3:
+        return xy
+    return np.vstack([keep, keep[:1]])
+
+
+def _tidy(poly: Polygon, tile: float = 0.0, origin=(0.0, 0.0)) -> Polygon:
+    try:
+        out = Polygon(_tidy_ring(np.asarray(poly.exterior.coords)[:, :2], tile, origin),
+                      [_tidy_ring(np.asarray(r.coords)[:, :2], tile, origin)
+                       for r in poly.interiors])
+    except Exception:  # noqa: BLE001
+        return poly
+    return out if (out.is_valid and not out.is_empty) else poly
 
 
 def split_to_tiles(poly, tile: float, origin=(0.0, 0.0), _depth: int = 0) -> list:
@@ -68,34 +102,32 @@ def split_to_tiles(poly, tile: float, origin=(0.0, 0.0), _depth: int = 0) -> lis
     share a grid line share its end points exactly, so triangulating each
     piece gives a conforming mesh once the vertices are welded."""
     out = []
+    ox, oy = origin
     for p in polygons_of(poly):
         minx, miny, maxx, maxy = p.bounds
-        w, h = maxx - minx, maxy - miny
-        if (w <= tile * 1.0001 and h <= tile * 1.0001) or _depth > 40:
+        # grid lines strictly inside the bounds (the margin keeps cuts off the
+        # outline itself: a line a nanometre inside an edge shaves off a sliver)
+        kx0 = math.floor((minx - ox) / tile + 1e-4) + 1
+        kx1 = math.ceil((maxx - ox) / tile - 1e-4) - 1
+        ky0 = math.floor((miny - oy) / tile + 1e-4) + 1
+        ky1 = math.ceil((maxy - oy) / tile - 1e-4) - 1
+        nx, ny = kx1 - kx0 + 1, ky1 - ky0 + 1
+        # a piece is finished only when NO grid line crosses it -- stopping on
+        # size alone would leave a piece straddling a line its neighbours were
+        # cut on, i.e. a T-junction
+        if (nx <= 0 and ny <= 0) or _depth > 48:
             out.append(p)
             continue
-        ox, oy = origin
-        if w >= h:
-            k0 = math.floor((minx - ox) / tile) + 1
-            k1 = math.ceil((maxx - ox) / tile) - 1
-            if k1 < k0:
-                out.append(p)
-                continue
-            cut = ox + ((k0 + k1) // 2) * tile
+        if nx >= ny:
+            cut = ox + ((kx0 + kx1) // 2) * tile
             halves = (box(minx - 1, miny - 1, cut, maxy + 1),
                       box(cut, miny - 1, maxx + 1, maxy + 1))
         else:
-            k0 = math.floor((miny - oy) / tile) + 1
-            k1 = math.ceil((maxy - oy) / tile) - 1
-            if k1 < k0:
-                out.append(p)
-                continue
-            cut = oy + ((k0 + k1) // 2) * tile
+            cut = oy + ((ky0 + ky1) // 2) * tile
             halves = (box(minx - 1, miny - 1, maxx + 1, cut),
                       box(minx - 1, cut, maxx + 1, maxy + 1))
         for hb in halves:
-            piece = p.intersection(hb)
-            out += split_to_tiles(piece, tile, origin, _depth + 1)
+            out += split_to_tiles(p.intersection(hb), tile, origin, _depth + 1)
     return [p for p in out if p.area > 1e-9]
 
 
@@ -104,7 +136,7 @@ def conforming_triangulation(poly, tile: float, origin=(0.0, 0.0)):
     (vertices (N,2), faces (M,3)), welded, CCW."""
     vs, fs, n = [], [], 0
     for piece in split_to_tiles(poly, tile, origin):
-        v, f = triangulate(piece)
+        v, f = triangulate(_tidy(piece, tile, origin))
         if len(f):
             vs.append(v)
             fs.append(f + n)
@@ -145,7 +177,7 @@ def solid_between(v2: np.ndarray, faces: np.ndarray, z_top: np.ndarray,
 
 def prism(poly: Polygon, z_bottom: float, z_top: float) -> trimesh.Trimesh | None:
     """Flat-topped extrusion of a footprint (holes respected)."""
-    v, f = triangulate(poly)
+    v, f = triangulate(_tidy(poly))
     if len(f) == 0 or z_top - z_bottom <= 1e-6:
         return None
     return solid_between(v, f, np.full(len(v), z_top), np.full(len(v), z_bottom))
