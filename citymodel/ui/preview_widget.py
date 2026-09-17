@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import numpy as np
 import vtk
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QToolButton, QVBoxLayout, QWidget
@@ -91,20 +90,6 @@ class PreviewWidget(QWidget):
     def reinitialize(self):
         logger.info("preview: rebuilding the 3D view")
         self._build_plotter()
-
-    def check_first_frame(self):
-        """Called once, shortly after the window is first shown: if the panel
-        never painted anything but its own background (a failed GPU context
-        rendering nothing at all), rebuild it automatically so a person never
-        has to notice and click Reinit themselves."""
-        try:
-            img = self.plotter.screenshot(None, return_img=True)
-        except Exception:  # noqa: BLE001
-            return
-        if img is not None and float(np.ptp(img)) < 1.0:     # a flat, single-colour frame
-            logger.warning("preview: the 3D view rendered a blank frame on startup -- "
-                           "rebuilding it")
-            self._build_plotter()
 
     PLACEHOLDER = "\n".join((
         "No model yet", "",

@@ -50,7 +50,6 @@ class MainWindow(QMainWindow):
         self._load_timer.setSingleShot(True)
         self._load_timer.setInterval(900)
         self._load_timer.timeout.connect(self._auto_load_buildings)
-        QTimer.singleShot(1500, self.preview.check_first_frame)
         self._refresh_area_text()
         self._refresh_selection_list()
         self._update_buttons()

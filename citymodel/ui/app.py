@@ -11,21 +11,22 @@ def main(argv=None) -> int:
     os.environ.setdefault("QT_API", "pyside6")
     # Hybrid-GPU laptops (an Intel iGPU alongside a discrete NVIDIA/AMD GPU) can
     # have the WebEngine (Chromium/ANGLE) and VTK (native WGL) renderers land on
-    # different adapters, or have Chromium's GPU process fall back to a software
-    # rasterizer via its driver blocklist. Both show up as blank white panels
-    # that fixed themselves on the next launch -- pinning ANGLE to D3D11 and
-    # ignoring that blocklist removes most of that non-determinism. If GPU
-    # trouble is still suspected, CITYMODEL_SOFTWARE_GL=1 forces both onto
-    # software rendering (slower, but never blank).
-    if os.environ.get("CITYMODEL_SOFTWARE_GL") == "1":
+    # different adapters, or race for a hardware context at startup, and one or
+    # both panels come up blank -- or, forcing a specific ANGLE backend turned
+    # out to trade that for visual corruption on at least one real machine, so
+    # it is opt-in, not a default: CITYMODEL_GPU=angle-d3d11 to try that,
+    # CITYMODEL_GPU=software to force both onto a software rasterizer (slow,
+    # but never blank or corrupted -- useful to confirm it really is a GPU
+    # driver issue). Left unset, Chromium picks its own backend as normal.
+    gpu_mode = os.environ.get("CITYMODEL_GPU", "")
+    if gpu_mode == "software":
         os.environ.setdefault("QTWEBENGINE_CHROMIUM_FLAGS", "--use-gl=swiftshader")
         os.environ.setdefault("MESA_GL_VERSION_OVERRIDE", "3.3")
-    else:
+    elif gpu_mode == "angle-d3d11":
         os.environ.setdefault("QTWEBENGINE_CHROMIUM_FLAGS",
                               "--use-angle=d3d11 --ignore-gpu-blocklist")
     from PySide6.QtCore import QCoreApplication, Qt  # noqa: PLC0415
     QCoreApplication.setAttribute(Qt.ApplicationAttribute.AA_ShareOpenGLContexts)
-    QCoreApplication.setAttribute(Qt.ApplicationAttribute.AA_UseDesktopOpenGL)
     from PySide6.QtWebEngineWidgets import QWebEngineView  # noqa: F401, PLC0415
     from PySide6.QtWidgets import QApplication  # noqa: PLC0415
 
