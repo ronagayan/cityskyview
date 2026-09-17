@@ -172,3 +172,15 @@ def test_flat_model_without_terrain(features, area):
     m = pipeline.build_model(area, s, data)
     assert np.ptp(m.surface.z) == 0.0
     assert_clean(m.terrain, "flat")
+
+
+def test_overture_heights_fill_only_what_osm_lacks(features, area, settings, osm_json):
+    ids = osm_json["ids"]
+    pts = [{"lat": 32.0891, "lon": 34.81215, "height": 23.0, "floors": 0, "source": "Microsoft"},   # "plain"
+           {"lat": 32.08815, "lon": 34.8102, "height": 99.0, "floors": 0, "source": "Microsoft"}]   # "tagged"
+    data = make_data(features)
+    data.overture_points = pts
+    m = pipeline.build_model(area, settings, data)
+    by_id = {b.osm_id: b for b in m.buildings}
+    assert by_id[ids["plain"]].height_source == "overture" and by_id[ids["plain"]].height_m == 23.0
+    assert by_id[ids["tagged"]].height_m == 18.0            # an OSM tag always wins
