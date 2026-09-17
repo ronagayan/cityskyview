@@ -1,0 +1,10 @@
+{
+  "presets": {
+    "big frame 18x22": {
+      "width": 180.0,
+      "depth": 219.45,
+      "height": 0.0,
+      "aspect": "3:4"
+    }
+  }
+}

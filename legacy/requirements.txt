@@ -1,0 +1,16 @@
+# --- core pipeline ---
+requests
+numpy
+shapely
+trimesh
+mapbox-earcut      # triangulation engine trimesh needs for extrude_polygon
+manifold3d         # robust mesh booleans (used for "engraved" road/water mode)
+networkx           # pulled in by trimesh scene/graph paths
+
+# --- GUI ---
+# tkinter ships with the standard CPython installer on Windows/macOS.
+pillow             # reference-image capture + the 3D preview renderer
+# The map is a Leaflet page served on 127.0.0.1 and opened in your browser --
+# no extra Python package needed (uses the stdlib http.server).
+
+# install everything:  python -m pip install --user -r requirements.txt
