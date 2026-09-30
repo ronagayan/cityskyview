@@ -12,14 +12,16 @@ player opens their world to LAN, the others join. No router or internet needed.
 
 Change the name/password/channel at the top of `minecraft-lan.ino` if you want.
 
-## Flash it (2 minutes, no software to install)
+## Flash it (one click, nothing to install)
 
-1. Plug the ESP32 into a computer with a **data** USB cable (USB-A port, try both plug orientations on USB-C boards).
-2. Open **https://esp.huhn.me** in Chrome or Edge, click **Connect**, pick the board's serial port.
-3. Click **Erase** to wipe whatever is on the board.
-4. Click **Add**, choose `firmware/minecraft-lan.merged.bin`, set the offset to `0x0`, click **Program**.
-5. Unplug, plug into any USB charger or power bank. The board's blue LED turns on
+1. Save `flash.html` from this folder to your computer and open it in **Chrome** or **Edge**.
+   It is self-contained: the firmware and the flashing tool are inside the file.
+2. Plug the ESP32 into a USB-A port with a **data** cable (USB-C boards: try both plug orientations).
+3. Click **Erase & flash the board**, pick the board's port in the popup, wait about a minute.
+4. Unplug, plug into any USB charger or power bank. The board's blue LED turns on
    solid when the network is up and blinks once per connected player.
+
+Alternative: https://esp.huhn.me → Connect → Erase → Add `firmware/minecraft-lan.merged.bin` at offset `0x0` → Program.
 
 Command-line alternative:
 
