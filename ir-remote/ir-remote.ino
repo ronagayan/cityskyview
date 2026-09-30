@@ -485,7 +485,7 @@ void handlePinFindRx() {
   sendJson(200, d);
 }
 
-static void IRAM_ATTR onRxEdge() { rxEdges++; }
+static void IRAM_ATTR onRxEdge() { rxEdges = rxEdges + 1; }
 
 // 38 kHz carrier on/off helpers, core 3.x API with a core 2.x fallback.
 #if ESP_ARDUINO_VERSION >= ESP_ARDUINO_VERSION_VAL(3, 0, 0)
@@ -828,16 +828,16 @@ const st={buttons:[],custom:JSON.parse(localStorage.getItem('irDevices')||'[]'),
  ac:{power:false,mode:'cool',temp:24,fan:'auto',swingv:'off'},pin:{rx:null,tx:null}};
 let toastT=null,pollT=null;
 
-async function api(p,o){const r=await fetch(p,o);let j=null;try{j=await r.json()}catch(e){}if(!r.ok)throw new Error((j&&j.error)||('HTTP '+r.status));return j}
-function toast(m,err){const t=$('#toast');t.textContent=m;t.className='toast show'+(err?' err':'');clearTimeout(toastT);toastT=setTimeout(()=>t.className='toast',2200)}
-function esc(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
-function norm(s){return String(s).toLowerCase().replace(/[^a-z0-9+-]/g,'')}
-function devices(){const d=[...DEF];st.custom.forEach(x=>{if(!d.some(y=>y.toLowerCase()===x.toLowerCase()))d.push(x)});st.buttons.forEach(b=>{if(!d.some(y=>y.toLowerCase()===b.dev.toLowerCase()))d.push(b.dev)});return d}
-function btnsOf(dev){return st.buttons.filter(b=>b.dev.toLowerCase()===dev.toLowerCase())}
-function acKnown(){return !!(st.sys&&st.sys.ac&&st.sys.ac.known)}
-function fmtUp(s){const d=Math.floor(s/86400),h=Math.floor(s%86400/3600),m=Math.floor(s%3600/60);return (d?d+'d ':'')+h+'h '+m+'m'}
+const api=async (p,o)=>{const r=await fetch(p,o);let j=null;try{j=await r.json()}catch(e){}if(!r.ok)throw new Error((j&&j.error)||('HTTP '+r.status));return j}
+const toast=(m,err)=>{const t=$('#toast');t.textContent=m;t.className='toast show'+(err?' err':'');clearTimeout(toastT);toastT=setTimeout(()=>t.className='toast',2200)}
+const esc=(s)=>{return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+const norm=(s)=>{return String(s).toLowerCase().replace(/[^a-z0-9+-]/g,'')}
+const devices=()=>{const d=[...DEF];st.custom.forEach(x=>{if(!d.some(y=>y.toLowerCase()===x.toLowerCase()))d.push(x)});st.buttons.forEach(b=>{if(!d.some(y=>y.toLowerCase()===b.dev.toLowerCase()))d.push(b.dev)});return d}
+const btnsOf=(dev)=>{return st.buttons.filter(b=>b.dev.toLowerCase()===dev.toLowerCase())}
+const acKnown=()=>{return !!(st.sys&&st.sys.ac&&st.sys.ac.known)}
+const fmtUp=(s)=>{const d=Math.floor(s/86400),h=Math.floor(s%86400/3600),m=Math.floor(s%3600/60);return (d?d+'d ':'')+h+'h '+m+'m'}
 
-async function refresh(){
+const refresh=async ()=>{
  try{
   const b=await api('/api/buttons');st.buttons=b.buttons||[];
   const s=await api('/api/state');st.sys=s;
@@ -847,7 +847,7 @@ async function refresh(){
  render();
 }
 
-function render(){
+const render=()=>{
  const devs=devices();
  if(st.sel!=='settings'&&!devs.some(d=>d.toLowerCase()===st.sel.toLowerCase()))st.sel='TV';
  localStorage.setItem('irSel',st.sel);
@@ -864,7 +864,7 @@ function render(){
  bindDevice(st.sel);
 }
 
-function renderDevice(dev){
+const renderDevice=(dev)=>{
  const list=btnsOf(dev),custom=!DEF.some(d=>d.toLowerCase()===dev.toLowerCase());
  let h='<section class="card'+(st.edit?' edit':'')+'"><div class="head"><h2>'+(dev.toLowerCase()==='ac'?'Learned AC buttons':esc(dev))+'</h2><div class="acts">'
   +'<button class="sm" id="learnBtn">＋ Learn</button><button class="sm'+(st.edit?' on':'')+'" id="editBtn">'+(st.edit?'Done':'Edit')+'</button></div></div>';
@@ -874,7 +874,7 @@ function renderDevice(dev){
  return h+'</section>';
 }
 
-function bindDevice(dev){
+const bindDevice=(dev)=>{
  const lb=$('#learnBtn'),eb=$('#editBtn'),dd=$('#delDev');
  if(lb)lb.onclick=()=>learnFlow(dev);
  if(eb)eb.onclick=()=>{st.edit=!st.edit;render()};
@@ -883,12 +883,12 @@ function bindDevice(dev){
  if(dev.toLowerCase()==='ac')bindAC();
 }
 
-async function sendBtn(dev,name,el,raw){
+const sendBtn=async (dev,name,el,raw)=>{
  if(el){el.classList.add('sent');setTimeout(()=>el.classList.remove('sent'),250)}
  try{await api('/send?dev='+encodeURIComponent(dev)+'&name='+encodeURIComponent(name)+(raw?'&raw=1':''))}catch(e){toast(e.message,true)}
 }
 
-function keyMenu(dev,name){
+const keyMenu=(dev,name)=>{
  const url=location.origin+'/send?dev='+encodeURIComponent(dev)+'&name='+encodeURIComponent(name);
  sheet('<h3>'+esc(dev)+' / '+esc(name)+'</h3><p class="hint">Shortcut URL:</p><pre>'+esc(url)+'</pre>'
   +'<div class="row"><button id="mCopy">Copy URL</button><button id="mRaw">Send raw</button></div><div class="row"><button id="mDel" style="background:var(--danger);color:#fff">Delete</button><button id="mClose">Close</button></div>');
@@ -898,7 +898,7 @@ function keyMenu(dev,name){
  $('#mDel').onclick=async()=>{if(!confirm('Delete "'+name+'" from '+dev+'?'))return;try{await api('/api/button?dev='+encodeURIComponent(dev)+'&name='+encodeURIComponent(name),{method:'DELETE'});toast('Deleted');closeSheet();refresh()}catch(e){toast(e.message,true)}};
 }
 
-function addDevice(){
+const addDevice=()=>{
  const n=(prompt('New device name (e.g. Soundbar):')||'').trim();
  if(!n)return;if(n.length>32)return toast('Name too long',true);
  if(!devices().some(d=>d.toLowerCase()===n.toLowerCase())){st.custom.push(n);localStorage.setItem('irDevices',JSON.stringify(st.custom))}
@@ -906,11 +906,11 @@ function addDevice(){
 }
 
 /* ---------- Learn flow ---------- */
-function sheet(html){$('#sheet').innerHTML=html;$('#modal').classList.add('show')}
-function closeSheet(){$('#modal').classList.remove('show');clearInterval(pollT);pollT=null}
+const sheet=(html)=>{$('#sheet').innerHTML=html;$('#modal').classList.add('show')}
+const closeSheet=()=>{$('#modal').classList.remove('show');clearInterval(pollT);pollT=null}
 $('#modal').onclick=e=>{if(e.target.id==='modal'){if(pollT)fetch('/api/learn/cancel',{method:'POST'});closeSheet()}};
 
-function learnFlow(dev,preset){
+const learnFlow=(dev,preset)=>{
  const sug=(KEYS[dev]||KEYS['*']).filter(k=>!btnsOf(dev).some(b=>b.name.toLowerCase()===k.toLowerCase()));
  sheet('<h3>Learn a button for '+esc(dev)+'</h3><input type="text" id="lname" placeholder="Button name (e.g. Power)" maxlength="32" value="'+esc(preset||'')+'">'
   +(sug.length?'<div class="chips">'+sug.map(k=>'<button class="chip" data-k="'+esc(k)+'">'+esc(k)+'</button>').join('')+'</div>':'')
@@ -921,7 +921,7 @@ function learnFlow(dev,preset){
  setTimeout(()=>{const i=$('#lname');if(i&&!preset)i.focus()},50);
 }
 
-async function startLearn(dev,name){
+const startLearn=async (dev,name)=>{
  const exists=btnsOf(dev).some(b=>b.name.toLowerCase()===name.toLowerCase());
  if(exists&&!confirm('"'+name+'" already exists. Re-learn it?'))return;
  try{await api('/api/learn?dev='+encodeURIComponent(dev)+'&name='+encodeURIComponent(name),{method:'POST'})}catch(e){return toast(e.message,true)}
@@ -946,7 +946,7 @@ async function startLearn(dev,name){
 }
 
 /* ---------- AC ---------- */
-function renderAC(){
+const renderAC=()=>{
  const a=st.ac,k=acKnown();
  const modes=['cool','heat','dry','fan','auto'],fans=['auto','low','medium','high'];
  let h='<section class="card"><div class="head"><h2>Air conditioner</h2><span class="hint" style="margin:0">'+(k?'<span class="ok">'+esc(st.sys.ac.protocol)+'</span>':'<span class="no">no protocol yet</span>')+'</span></div>';
@@ -957,7 +957,7 @@ function renderAC(){
  h+='<div class="label">Fan</div><div class="chips">'+fans.map(f=>'<button class="chip'+(a.fan===f?' on':'')+'" data-f="'+f+'">'+f+'</button>').join('')+'</div>';
  return h+'</section>';
 }
-function bindAC(){
+const bindAC=()=>{
  $('#acUp').onclick=()=>acAct('tempUp',{temp:Math.min(30,st.ac.temp+1)});
  $('#acDn').onclick=()=>acAct('tempDown',{temp:Math.max(16,st.ac.temp-1)});
  $('#acPow').onclick=()=>acAct('power',{power:!st.ac.power});
@@ -965,7 +965,7 @@ function bindAC(){
  document.querySelectorAll('[data-m]').forEach(b=>b.onclick=()=>acAct('mode',{mode:b.dataset.m,power:true}));
  document.querySelectorAll('[data-f]').forEach(b=>b.onclick=()=>acAct('fan',{fan:b.dataset.f}));
 }
-async function acAct(action,patch){
+const acAct=async (action,patch)=>{
  if(acKnown()){
   Object.assign(st.ac,patch);
   const q=new URLSearchParams({power:st.ac.power?'on':'off',mode:st.ac.mode,temp:st.ac.temp,fan:st.ac.fan,swing:st.ac.swingv});
@@ -983,7 +983,7 @@ async function acAct(action,patch){
 }
 
 /* ---------- Settings ---------- */
-function renderSettings(m){
+const renderSettings=(m)=>{
  const s=st.sys||{};
  let h='<section class="card"><div class="head"><h2>Device</h2><button class="sm" id="reload">Refresh</button></div><table>'
   +'<tr><th>Address</th><td>http://'+esc(s.mdns||'irremote.local')+' · '+esc(s.ip||'?')+'</td></tr>'

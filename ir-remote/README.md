@@ -66,12 +66,28 @@ but 3.x is the target).
 |---|---|
 | Board | **ESP32 Dev Module** |
 | Flash Size | 4MB (32Mb) |
-| Partition Scheme | **No OTA (2MB APP / 2MB SPIFFS)** — the full IRremoteESP8266 + IRac build is ~1.3 MB, too big for the default 1.2 MB app partition. LittleFS uses the partition labelled `spiffs`. |
+| Partition Scheme | **No OTA (2MB APP / 2MB SPIFFS)** — the full IRremoteESP8266 + IRac build is 1.26 MB, which only just squeezes into the default 1.2 MB app partition; No OTA gives headroom. LittleFS uses the partition labelled `spiffs`. |
 | Upload Speed | 921600 (drop to 460800 / 115200 if the CH340 misbehaves) |
 | Core Debug Level | None |
 | Erase All Flash Before Sketch Upload | Enabled for the very first flash, then Disabled (otherwise every upload wipes your learned buttons and Wi-Fi credentials) |
 
 Open `ir-remote/ir-remote.ino`, select the port, upload.
+
+Verified build (arduino-cli, ESP32 core 3.3.12, IRremoteESP8266 2.9.0, WiFiManager 2.0.17,
+ArduinoJson 7.4.2): compiles with no warnings, 1,259,075 bytes of flash, 51 KB static RAM.
+
+### No IDE yet? Flash the prebuilt first-boot image
+
+`firmware/ir-remote-v1.0.0-pins-unset.merged.bin` is the exact build above with the pins
+still at `-1`. It is enough for the Wi-Fi portal, the web UI and the **pin finder**; you
+still need the IDE for the final flash with the pins filled in. Flash it at offset 0:
+
+```sh
+pip install esptool
+esptool.py --chip esp32 --port /dev/ttyUSB0 --baud 460800 write_flash 0x0 firmware/ir-remote-v1.0.0-pins-unset.merged.bin
+```
+
+Or drag the file into a browser flasher such as https://esp.huhn.me (Chrome/Edge, offset `0x0`).
 
 ---
 
