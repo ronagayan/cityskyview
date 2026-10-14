@@ -15,7 +15,7 @@ Tested headlessly with a fake camera (see `tools/`): target detected → pop-up 
 | --- | --- |
 | `index.html` | The AR page. You should not need to edit it. |
 | `config.js` | **Edit this**: Instagram URL, button label, pop-up image, pop-up size, auto-open. |
-| `assets/popup.png` | The image that pops up (placeholder, replace with your own PNG/JPG). |
+| `assets/popup.png` | The image that pops up: the logo, the Instagram name and "click and follow" (built by `tools/make_placeholders.py` from `assets/logo.png`). |
 | `targets/target.png` | The sample target image the camera looks for (placeholder, replace with yours). |
 | `targets/targets.mind` | The compiled form of the target image(s), built with `compile.html`. |
 | `compile.html` | Browser tool that turns your target image(s) into `targets.mind`. |
@@ -30,11 +30,11 @@ camera access on plain `http://`. Serve `.mind` as `application/octet-stream` (a
 
 ## Customise
 
-1. **Instagram link** — open `config.js` and set `instagramUrl` to your profile, e.g.
-   `https://www.instagram.com/<your-handle>/`. The current value is a guess based on the domain name;
-   check it before publishing.
-2. **Pop-up image** — replace `assets/popup.png` (keep the name, or change `popupImage` in `config.js`).
-   A transparent PNG works. `popupScale` sets its width relative to the printed target (1 = same width).
+1. **Instagram link** — `instagramUrl` in `config.js` (currently `https://www.instagram.com/shimushi.li/`).
+2. **Pop-up image** — either replace `assets/popup.png` with any PNG/JPG (transparent PNG works), or change
+   the name / call-to-action text at the top of the pop-up section in `tools/make_placeholders.py` and run
+   `python3 tools/make_placeholders.py .` to rebuild it from `assets/logo.png`.
+   `popupScale` in `config.js` sets its width relative to the printed target (1 = same width).
 3. **Target image** — this is what people point the camera at.
    - Use something with lots of detail and contrast, no big plain areas, nothing repetitive (a logo on a
      plain background tracks poorly; a photo, an illustration or a busy card tracks well). Roughly 1000 px

@@ -3,7 +3,7 @@
 window.AR_CONFIG = {
   // Where a tap on the pop-up sends people. Use your real Instagram profile URL.
   // This URL opens the Instagram app when it is installed, otherwise the website.
-  instagramUrl: "https://www.instagram.com/shimushili/",
+  instagramUrl: "https://www.instagram.com/shimushi.li/",
 
   // Label on the on-screen button that appears once the target is found.
   buttonLabel: "Open Instagram",

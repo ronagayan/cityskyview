@@ -50,29 +50,44 @@ d.rectangle((20, 20, W - 20, H - 20), outline=(20, 20, 30), width=10)
 img.save(f"{out_dir}/targets/target.png", optimize=True)
 
 # ---------- Pop-up image (what appears on top of the target) ----------
-S = 1000
-pop = Image.new("RGBA", (S, S), (0, 0, 0, 0))
-# Instagram-like gradient card
-grad = Image.new("RGBA", (S, S))
-gp = grad.load()
-for y in range(S):
-    for x in range(S):
-        t = (x + y) / (2 * S)
-        r = int(254 * (1 - t) + 131 * t)
-        g = int(218 * (1 - t) + 58 * t)
-        b = int(117 * (1 - t) + 180 * t)
-        gp[x, y] = (r, g, b, 255)
-mask = Image.new("L", (S, S), 0)
-ImageDraw.Draw(mask).rounded_rectangle((20, 20, S - 20, S - 20), radius=140, fill=255)
-pop.paste(grad, (0, 0), mask)
+# Logo (assets/logo.png) on a rounded navy card, the Instagram name below it, then "click and follow".
+NAME = "shimushi.li"
+CTA = "click and follow"
+NAVY = (11, 31, 46, 255)
+W, H = 1000, 1380
+pop = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+card = Image.new("RGBA", (W, H), NAVY)
+mask = Image.new("L", (W, H), 0)
+ImageDraw.Draw(mask).rounded_rectangle((0, 0, W - 1, H - 1), radius=150, fill=255)
+pop.paste(card, (0, 0), mask)
+logo = Image.open(f"{out_dir}/assets/logo.png").convert("RGBA")
+logo = logo.resize((820, 820), Image.LANCZOS)
+pop.alpha_composite(logo, ((W - 820) // 2, 40))
 d = ImageDraw.Draw(pop)
-# camera glyph
-cx, cy = S // 2, 400
-d.rounded_rectangle((cx - 190, cy - 190, cx + 190, cy + 190), radius=90, outline=(255, 255, 255, 255), width=26)
-d.ellipse((cx - 95, cy - 95, cx + 95, cy + 95), outline=(255, 255, 255, 255), width=26)
-d.ellipse((cx + 105, cy - 135, cx + 145, cy - 95), fill=(255, 255, 255, 255))
-d.text((S // 2, 700), "Follow us on", fill=(255, 255, 255, 255), font=font(70), anchor="mm")
-d.text((S // 2, 800), "Instagram", fill=(255, 255, 255, 255), font=font(96), anchor="mm")
-d.text((S // 2, 900), "tap to open", fill=(255, 255, 255, 220), font=font(44), anchor="mm")
+# Instagram glyph + name on one line
+name_font = font(118)
+glyph = 100
+name_w = d.textlength(NAME, font=name_font)
+x0 = (W - (glyph + 34 + name_w)) / 2
+gy = 1000
+d.rounded_rectangle((x0, gy - glyph / 2, x0 + glyph, gy + glyph / 2), radius=28, outline=(255, 255, 255, 255), width=9)
+d.ellipse((x0 + 27, gy - 23, x0 + glyph - 27, gy + 23), outline=(255, 255, 255, 255), width=9)
+d.ellipse((x0 + glyph - 30, gy - glyph / 2 + 14, x0 + glyph - 18, gy - glyph / 2 + 26), fill=(255, 255, 255, 255))
+d.text((x0 + glyph + 34, gy), NAME, fill=(255, 255, 255, 255), font=name_font, anchor="lm")
+# CTA pill in the logo's orange→yellow
+pill_font = font(64)
+cta_w = d.textlength(CTA, font=pill_font)
+px0, px1 = (W - cta_w) / 2 - 70, (W + cta_w) / 2 + 70
+py0, py1 = 1150, 1290
+pill = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+pp = pill.load()
+for y in range(int(py0), int(py1) + 1):
+    for x in range(int(px0), int(px1) + 1):
+        t = (x - px0) / max(1, px1 - px0)
+        pp[x, y] = (int(255 * (1 - t) + 255 * t), int(94 * (1 - t) + 200 * t), int(20 * (1 - t) + 0 * t), 255)
+pmask = Image.new("L", (W, H), 0)
+ImageDraw.Draw(pmask).rounded_rectangle((px0, py0, px1, py1), radius=70, fill=255)
+pop.paste(pill, (0, 0), pmask)
+d.text((W / 2, (py0 + py1) / 2), CTA, fill=NAVY, font=pill_font, anchor="mm")
 pop.save(f"{out_dir}/assets/popup.png", optimize=True)
 print("ok")
