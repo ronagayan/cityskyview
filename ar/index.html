@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#000000">
+  <title>shimushili AR</title>
+  <!-- Libraries are served from this site (no CDN) so the page works offline-first and is not blocked by ad/script blockers. -->
+  <script src="vendor/aframe-v1.5.0.min.js"></script>
+  <script src="vendor/mindar-image-aframe.prod.js"></script>
+  <script src="config.js"></script>
+  <style>
+    html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #000;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; color: #fff; }
+    .hidden { display: none !important; }
+    .overlay { position: absolute; inset: 0; z-index: 2; display: flex; flex-direction: column;
+      align-items: center; justify-content: center; text-align: center; pointer-events: none; padding: 24px; box-sizing: border-box; }
+    .overlay p { margin: 8px 0; font-size: 16px; text-shadow: 0 1px 4px rgba(0,0,0,.8); }
+    .overlay a { color: #fff; pointer-events: auto; }
+    .spinner { width: 56px; height: 56px; border: 6px solid rgba(255,255,255,.25); border-top-color: #fff;
+      border-radius: 50%; animation: spin 1s linear infinite; margin-bottom: 16px; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .frame { width: min(70vw, 50vh); aspect-ratio: 1; border: 3px dashed rgba(255,255,255,.8); border-radius: 18px;
+      display: flex; align-items: center; justify-content: center; margin-bottom: 18px; }
+    .frame img { width: 55%; opacity: .85; border-radius: 8px; }
+    #error { background: rgba(0,0,0,.85); pointer-events: auto; }
+    #error button { pointer-events: auto; margin-top: 12px; padding: 10px 20px; border: 0; border-radius: 999px; font-size: 16px; }
+    #ig-button { position: absolute; left: 50%; bottom: max(28px, env(safe-area-inset-bottom)); transform: translateX(-50%);
+      z-index: 3; padding: 14px 26px; border-radius: 999px; text-decoration: none; color: #fff; font-weight: 600; font-size: 17px;
+      background: linear-gradient(45deg, #f9ce34, #ee2a7b, #6228d7); box-shadow: 0 6px 24px rgba(0,0,0,.45);
+      animation: rise .4s ease-out; white-space: nowrap; }
+    @keyframes rise { from { transform: translate(-50%, 30px); opacity: 0; } to { transform: translate(-50%, 0); opacity: 1; } }
+  </style>
+</head>
+<body>
+  <!-- Overlays (MindAR shows/hides these for us via the uiLoading / uiScanning / uiError options) -->
+  <div id="loading" class="overlay hidden"><div class="spinner"></div><p>Starting camera…</p></div>
+  <div id="scanning" class="overlay hidden">
+    <div class="frame"><img id="scanning-thumb" alt="" src="targets/target.png"></div>
+    <p>Point your camera at the target image</p>
+    <p style="font-size:13px;opacity:.8">No target handy? <a href="targets/target.png" target="_blank" rel="noopener">open it on another screen</a> and scan that.</p>
+  </div>
+  <div id="error" class="overlay hidden">
+    <p><strong>Camera not available</strong></p>
+    <p>Allow camera access for this site and open it over <code>https://</code>. On iPhone use Safari or Chrome.</p>
+    <button type="button" onclick="location.reload()">Try again</button>
+  </div>
+
+  <!-- On-screen button; shown once the target has been found -->
+  <a id="ig-button" class="hidden" href="#" target="_blank" rel="noopener">Open Instagram</a>
+
+  <script>
+  (function () {
+    var C = window.AR_CONFIG || {};
+    var instagramUrl = C.instagramUrl || "https://www.instagram.com/";
+    var igButton = document.getElementById("ig-button");
+    igButton.href = instagramUrl;
+    igButton.textContent = C.buttonLabel || "Open Instagram";
+
+    // Build the scene from config so only config.js needs editing.
+    var popupScale = C.popupScale || 1;
+    var scene = document.createElement("a-scene");
+    scene.setAttribute("mindar-image",
+      "imageTargetSrc: " + (C.targetsFile || "targets/targets.mind") + ";" +
+      " filterMinCF: 0.0001; filterBeta: 0.001;" +           // smoother, less jittery tracking
+      " uiLoading: #loading; uiScanning: #scanning; uiError: #error");
+    scene.setAttribute("color-space", "sRGB");
+    scene.setAttribute("renderer", "colorManagement: true");
+    scene.setAttribute("loading-screen", "enabled: false");
+    scene.setAttribute("xr-mode-ui", "enabled: false");   // hides A-Frame's VR/fullscreen button (A-Frame >= 1.5)
+    scene.setAttribute("vr-mode-ui", "enabled: false");   // same, for older A-Frame builds
+    scene.setAttribute("device-orientation-permission-ui", "enabled: false");
+    scene.innerHTML =
+      '<a-assets timeout="15000">' +
+      '  <img id="popupImg" src="' + (C.popupImage || "assets/popup.png") + '">' +
+      '</a-assets>' +
+      // The cursor/raycaster on the camera turn taps on the pop-up into "click" events.
+      '<a-camera position="0 0 0" look-controls="enabled: false"' +
+      '  cursor="fuse: false; rayOrigin: mouse" raycaster="far: 10000; objects: .clickable"></a-camera>' +
+      '<a-entity id="anchor" mindar-image-target="targetIndex: 0">' +
+      '  <a-image id="popup" class="clickable" src="#popupImg" position="0 0 0.05"' +
+      '    width="' + popupScale + '" height="' + popupScale + '" scale="0.001 0.001 0.001"' +
+      '    animation__pop="property: scale; from: 0.001 0.001 0.001; to: 1 1 1; dur: 650; easing: easeOutElastic; startEvents: pop"' +
+      '    animation__float="property: position; from: 0 0 0.05; to: 0 0.06 0.08; dur: 1600; dir: alternate; loop: true; easing: easeInOutSine">' +
+      '  </a-image>' +
+      '</a-entity>';
+    document.body.appendChild(scene);
+
+    var popup = document.getElementById("popup");
+    var anchor = document.getElementById("anchor");
+    var popupImg = document.getElementById("popupImg");
+
+    // Keep the pop-up's aspect ratio equal to the image's.
+    function fitPopup() {
+      if (popupImg.naturalWidth && popupImg.naturalHeight) {
+        popup.setAttribute("height", popupScale * popupImg.naturalHeight / popupImg.naturalWidth);
+      }
+    }
+    if (popupImg.complete) fitPopup(); else popupImg.addEventListener("load", fitPopup);
+
+    function openInstagram() {
+      var w = window.open(instagramUrl, "_blank");
+      if (w) { w.opener = null; } else { window.location.href = instagramUrl; }
+    }
+
+    var hideTimer = null, autoTimer = null, found = false;
+    anchor.addEventListener("targetFound", function () {
+      found = true;
+      clearTimeout(hideTimer);
+      popup.emit("pop");                       // play the pop-up animation
+      igButton.classList.remove("hidden");
+      if (C.autoOpenDelayMs > 0 && !autoTimer) {
+        autoTimer = setTimeout(function () { window.location.href = instagramUrl; }, C.autoOpenDelayMs);
+      }
+    });
+    anchor.addEventListener("targetLost", function () {
+      hideTimer = setTimeout(function () { igButton.classList.add("hidden"); }, C.buttonLingerMs || 0);
+    });
+    popup.addEventListener("click", openInstagram);
+
+    scene.addEventListener("arError", function (e) { console.error("AR error", e.detail); });
+  })();
+  </script>
+</body>
+</html>
