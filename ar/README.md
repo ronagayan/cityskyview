@@ -25,9 +25,17 @@ Tested headlessly with a fake camera (see `tools/`): target detected, nothing bu
 
 ## Deploy
 
-Upload the contents of this folder to the web root of `ar.shimushili.com` (GitHub Pages, Cloudflare Pages,
-Netlify, nginx, anything that serves static files). The only hard requirement is **HTTPS**: browsers refuse
-camera access on plain `http://`. Serve `.mind` as `application/octet-stream` (any default config does).
+**Automatic (GitHub Pages).** `.github/workflows/deploy-ar.yml` publishes this folder to GitHub Pages on
+every push to `main` that touches `ar/`, and can also be run by hand from the Actions tab. It needs a
+one-time setup:
+
+1. GitHub → this repo → **Settings → Pages**: set **Source** to **GitHub Actions**, and **Custom domain**
+   to `ar.shimushili.com`. Tick **Enforce HTTPS** once the certificate is issued.
+2. At the DNS provider for `shimushili.com`, set a **CNAME** record: name `ar`, value `ronagayan.github.io`.
+   This replaces whatever currently serves ar.shimushili.com.
+
+**Manual.** Upload the contents of this folder (without `tools/`) to any static host. The only hard
+requirement is **HTTPS**: browsers refuse camera access on plain `http://`.
 
 ## Customise
 

@@ -1,0 +1,45 @@
+# Publishes the ar/ folder (the ar.shimushili.com AR page) to GitHub Pages.
+# One-time setup in GitHub: Settings → Pages → Source: "GitHub Actions", Custom domain: ar.shimushili.com.
+# DNS: a CNAME record  ar → ronagayan.github.io  at the shimushili.com DNS provider.
+name: Deploy AR site to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+    paths: ["ar/**", ".github/workflows/deploy-ar.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Assemble site (everything in ar/ except dev tools)
+        run: |
+          cp -r ar _site
+          rm -rf _site/tools _site/README.md
+          echo "ar.shimushili.com" > _site/CNAME
+          ls -la _site
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
