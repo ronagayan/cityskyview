@@ -1,20 +1,21 @@
 # ar.shimushili.com — image-tracking AR with an Instagram pop-up
 
 A static web page. When the phone camera sees your **target image** (a sticker, poster, business card,
-packaging, a picture on a screen…), a **preset image pops up** on top of it. Tapping the pop-up, or the
-button at the bottom of the screen, opens your **Instagram** profile (the Instagram app when installed).
+packaging, a picture on a screen…), a **preset image pops up** on top of it. Tapping the pop-up opens your **Instagram** profile (the Instagram
+app when installed). The screen shows nothing but the camera feed and the pop-up: no buttons, labels or
+scanning hints.
 
 No app install: it runs in the phone's browser (Safari on iPhone, Chrome on Android) over HTTPS.
 Nothing is loaded from third-party CDNs; the libraries ship in `vendor/`.
 
-Tested headlessly with a fake camera (see `tools/`): target detected → pop-up shown → tap opens the Instagram URL.
+Tested headlessly with a fake camera (see `tools/`): target detected, nothing but the camera feed on screen, pop-up shown, tap opens the Instagram URL.
 
 ## Files
 
 | Path | What it is |
 | --- | --- |
 | `index.html` | The AR page. You should not need to edit it. |
-| `config.js` | **Edit this**: Instagram URL, button label, pop-up image, pop-up size, auto-open. |
+| `config.js` | **Edit this**: Instagram URL, pop-up image, pop-up size, auto-open. |
 | `assets/popup.png` | The image that pops up: the logo, the Instagram name and "click and follow" (built by `tools/make_placeholders.py` from `assets/logo.png`). |
 | `targets/target.png` | The sample target image the camera looks for (placeholder, replace with yours). |
 | `targets/targets.mind` | The compiled form of the target image(s), built with `compile.html`. |
@@ -40,16 +41,17 @@ camera access on plain `http://`. Serve `.mind` as `application/octet-stream` (a
      plain background tracks poorly; a photo, an illustration or a busy card tracks well). Roughly 1000 px
      on the long edge is plenty.
    - Open `compile.html` on the deployed site (or locally, see below), choose the image, press **Compile**,
-     and save the downloaded `targets.mind` into `targets/`. Also copy the image to `targets/target.png`
-     so the on-screen hint shows the right picture.
+     and save the downloaded `targets.mind` into `targets/`. Keep a copy of the image as
+     `targets/target.png` (the headless test uses it as the fake camera picture).
    - Several images can be compiled at once; the pop-up is attached to index 0 (the first one).
-4. **Auto-open** — set `autoOpenDelayMs` in `config.js` (for example `1500`) to jump to Instagram
+4. **Updating images** — phones cache aggressively. After replacing `popup.png` or `targets.mind`, bump the
+   `?v=` number on that file in `config.js`, and bump `config.js?v=` in `index.html`.
+5. **Auto-open** — set `autoOpenDelayMs` in `config.js` (for example `1500`) to jump to Instagram
    automatically shortly after the target is recognised, instead of waiting for a tap.
 
 ### Try it without printing anything
 
-Open `targets/target.png` on a laptop screen and point the phone at it. The scanning screen also has a
-link to the target image for exactly this purpose.
+Open `targets/target.png` on a laptop screen and point the phone at it.
 
 ### Run locally
 
@@ -96,4 +98,7 @@ Alternatives, if you want the effect *inside* a social app rather than the brows
 - **Target not recognised** — poor lighting, glare, or a weak target image (see tips above). Hold the phone
   still 20–50 cm from the target so it fills a good part of the view.
 - **Pop-up jitters** — expected on low-end phones; a bigger, more detailed target helps.
-- **Tap does nothing on the 3D pop-up** — use the button at the bottom; both go to the same URL.
+- **Old image still shows after an update** — the phone cached the old file. Bump the `?v=` numbers in
+  `config.js` (and on `config.js` in `index.html`), redeploy, and reload the page.
+- **Tap does nothing on the pop-up** — tap the middle of the image; set `autoOpenDelayMs` in `config.js`
+  if you want it to open Instagram without a tap.

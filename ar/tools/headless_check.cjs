@@ -91,7 +91,6 @@ function serve() {
     console.log("AR ready; waiting for the target to be detected …");
     await page.waitForFunction(() => window.__ar.includes("targetFound"), null, { timeout: 90000 });
     console.log("target found");
-    await page.waitForSelector("#ig-button:not(.hidden)", { timeout: 5000 });
     // The camera feed must be playing and cover the viewport (headless screenshots show it black, so check the DOM).
     const videoState = await page.evaluate(() => {
       const v = document.querySelector("video"); if (!v) return null;
@@ -100,8 +99,16 @@ function serve() {
     });
     if (!videoState || !videoState.w || videoState.paused || !videoState.covers) throw new Error("camera feed not playing full-screen: " + JSON.stringify(videoState));
     console.log("camera feed:", JSON.stringify(videoState));
-    const uiButtons = await page.$$eval(".a-enter-vr, .a-enter-ar", (els) => els.filter((e) => e.offsetParent !== null).length);
-    if (uiButtons) throw new Error("A-Frame VR/AR/fullscreen button is visible");
+    // Plain camera feed: no visible buttons, links, text or overlays on top of it.
+    const clutter = await page.evaluate(() => {
+      const visible = (e) => { const r = e.getBoundingClientRect(); const cs = getComputedStyle(e);
+        return r.width > 0 && r.height > 0 && cs.display !== "none" && cs.visibility !== "hidden" && cs.opacity !== "0"; };
+      const els = [...document.querySelectorAll("button, a, img, p, div, span")].filter((e) => !e.closest("a-assets") && visible(e));
+      const withText = els.filter((e) => [...e.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim()));
+      return els.filter((e) => /^(BUTTON|A|IMG)$/.test(e.tagName)).concat(withText)
+        .map((e) => e.tagName + (e.className ? "." + e.className : "") + " " + (e.textContent || "").trim().slice(0, 40));
+    });
+    if (clutter.length) throw new Error("visible UI on top of the camera feed: " + JSON.stringify(clutter));
     await page.waitForTimeout(1200); // let the pop-up animation finish
     const shot = path.join(outDir, "ar-popup.png");
     await page.screenshot({ path: shot });
@@ -114,8 +121,6 @@ function serve() {
     const opened = popup.url();
     console.log("tap opened:", opened);
     if (!opened.startsWith(instagramUrl)) throw new Error(`expected ${instagramUrl}, got ${opened}`);
-    const btnHref = await page.$eval("#ig-button", (a) => a.href);
-    if (btnHref !== instagramUrl) throw new Error(`button href ${btnHref} != ${instagramUrl}`);
     const relevant = errors.filter((e) => !/favicon/.test(e));
     if (relevant.length) { console.error("page errors:", relevant); failed = true; }
     console.log(failed ? "FAIL" : "PASS");
